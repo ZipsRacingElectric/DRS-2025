@@ -1,4 +1,4 @@
-# Source: https://github.com/ChibiOS/ChibiOS/blob/master/demos/STM32/RT-STM32F303-DISCOVERY/Makefile
+# Source: https://github.com/ChibiOS/ChibiOS/blob/master/demos/STM32/RT-STM32F407-DISCOVERY/Makefile
 
 # Build Options ---------------------------------------------------------------------------------------------------------------
 
@@ -38,6 +38,7 @@ USE_PROCESS_STACKSIZE = 0x400
 USE_EXCEPTIONS_STACKSIZE = 0x400
 
 # Enables the use of FPU (no, softfp, hard).
+# TODO(Barach): This should be enabled
 USE_FPU = no
 
 # FPU-related options.
@@ -46,29 +47,32 @@ USE_FPU_OPT = -mfloat-abi=$(USE_FPU) -mfpu=fpv4-sp-d16
 # Project, Target, Sources & Paths --------------------------------------------------------------------------------------------
 
 # Define project name here
-PROJECT = main
+PROJECT = stub
 
 # Target settings.
-MCU = cortex-m4
+MCU  = cortex-m4
 
 # Imported source files and paths.
-# ../../Giovanni-Di-Sirio/ChibiOS/src/
-CHIBIOS  := ${CHIBIOS_SOURCE_PATH}
-CONFDIR  := ./cfg
+CHIBIOS  := $(CHIBIOS_SOURCE_PATH)
+CONFDIR  := ./config
 BUILDDIR := ./build
 DEPDIR   := ./build/dep
+BOARDDIR := ./build/board
 
 # Licensing files.
 include $(CHIBIOS)/os/license/license.mk
 
 # Startup files.
-include $(CHIBIOS)/os/common/startup/ARMCMx/compilers/GCC/mk/startup_stm32f3xx.mk
+include $(CHIBIOS)/os/common/startup/ARMCMx/compilers/GCC/mk/startup_stm32f4xx.mk
 
 # HAL-OSAL files (optional).
 include $(CHIBIOS)/os/hal/hal.mk
-include $(CHIBIOS)/os/hal/ports/STM32/STM32F3xx/platform.mk
-include $(CHIBIOS)/os/hal/boards/ST_NUCLEO64_F303RE/board.mk
+include $(CHIBIOS)/os/hal/ports/STM32/STM32F4xx/platform.mk
 include $(CHIBIOS)/os/hal/osal/rt-nil/osal.mk
+
+# Board Files
+ALLCSRC += $(BOARDDIR)/board.c
+ALLINC += $(BOARDDIR)
 
 # RTOS files (optional).
 include $(CHIBIOS)/os/rt/rt.mk
@@ -83,13 +87,13 @@ include $(CHIBIOS)/test/rt/rt_test.mk
 include $(CHIBIOS)/test/oslib/oslib_test.mk
 
 # Define linker script file here
-LDSCRIPT= $(STARTUPLD)/STM32F303xE.ld
+LDSCRIPT= $(STARTUPLD)/STM32F407xG.ld
 
 # C sources that can be compiled in ARM or THUMB mode depending on the global
 # setting.
 CSRC = $(ALLCSRC) \
-	$(TESTSRC)    \
-	src/main.c
+       $(TESTSRC) \
+       src/main.c
 
 # C++ sources that can be compiled in ARM or THUMB mode depending on the global
 # setting.
@@ -133,7 +137,22 @@ RULESPATH = $(CHIBIOS)/os/common/startup/ARMCMx/compilers/GCC/mk
 include $(RULESPATH)/arm-none-eabi.mk
 include $(RULESPATH)/rules.mk
 
+# Board Files -----------------------------------------------------------------------------------------------------------------
+
+BOARD_CONF := $(CONFDIR)/board.chcfg $(CONFDIR)/board.fmpp
+BOARD_FILES := $(BOARDDIR)/board.h $(BOARDDIR)/board.c
+
+PRE_MAKE_ALL_RULE_HOOK: $(BOARD_FILES)
+
+$(BOARD_FILES) &: $(BOARD_CONF)
+	mkdir -p $(BOARDDIR)
+	fmpp -C $(CONFDIR)/board.fmpp --data-root=$(CONFDIR) -S									\
+		$(CHIBIOS_SOURCE_PATH)/tools/ftl/processors/boards/stm32f4xx/templates				\
+		--freemarker-links=lib:$(CHIBIOS_SOURCE_PATH)/tools/ftl/libs -O $(BOARDDIR)
+
+board_files: $(BOARD_FILES)
+
 # Board Programming -----------------------------------------------------------------------------------------------------------
 
-flash: build/main.elf
-	openocd -f interface/stlink.cfg -f target/stm32f3x.cfg -c "program build/main.elf verify reset exit"
+flash: build/$(PROJECT).elf
+	openocd -f interface/stlink.cfg -f target/stm32f4x.cfg -c "program build/$(PROJECT).elf verify reset exit"

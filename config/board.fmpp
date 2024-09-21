@@ -1,0 +1,7 @@
+data : {
+  doc1:xml (
+    board.chcfg
+    {
+    }
+  )
+}
