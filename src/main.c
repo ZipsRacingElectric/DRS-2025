@@ -18,7 +18,7 @@ static const CANConfig can1Config =
 	.mcr = 	CAN_MCR_ABOM |		// Automatic bus-off management.
 			CAN_MCR_AWUM |		// Automatic wakeup mode.
 			CAN_MCR_TXFP,		// Chronologic FIFI priority.
-	.btr =	CAN_BTR_SJW(0) |	// Max 1 TQ resynchronization jump. 
+	.btr =	CAN_BTR_SJW(0) |	// Max 1 TQ resynchronization jump.
 			CAN_BTR_TS2(1) |	// 2 TQ for time segment 2
 			CAN_BTR_TS1(10) |	// 11 TQ for time segment 1
 			CAN_BTR_BRP(2)		// Baudrate divisor of 3 (1 Mbps)
@@ -41,5 +41,16 @@ int main (void)
 
 	// Do nothing.
 	while (true)
-		chThdSleepMilliseconds (500);
+	{
+		chThdSleepMilliseconds (50);
+		DEBUG_PRINTF ("Button 1: %u\r\n", palReadLine (LINE_SERVO_LIMIT_1));
+		DEBUG_PRINTF ("Button 2: %u\r\n", palReadLine (LINE_SERVO_LIMIT_2));
+	}
+}
+
+// Callbacks ------------------------------------------------------------------------------------------------------------------
+
+void hardFaultCallback (void)
+{
+	// TODO(Barach): Fault behavior
 }

@@ -1,0 +1,3 @@
+[submodule "STM32F405-Common"]
+	path = common
+	url = git@github.com:ZipsRacingElectric/STM32F405-Common.git
