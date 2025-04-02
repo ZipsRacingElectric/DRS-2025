@@ -2,10 +2,14 @@
 
 // Includes
 #include "debug.h"
+#include "servo.h"
 
 // ChibiOS
 #include "ch.h"
 #include "hal.h"
+
+#include "controls/lerp.h"
+
 
 // CAN Configuration ----------------------------------------------------------------------------------------------------------
 
@@ -24,7 +28,64 @@ static const CANConfig can1Config =
 			CAN_BTR_BRP(2)		// Baudrate divisor of 3 (1 Mbps)
 };
 
+#define SCALEFACTOR 0.02442002442002442
+#define SCALEFACTORSW 0.005493247882810711
+
+float appsOnePercent;
+float brakeRearPercent;
+float steeringWheel;
+
 // Entrypoint -----------------------------------------------------------------------------------------------------------------
+
+static const PWMConfig pwm3Config = 
+{
+	.frequency = 100000, //80000, F_s
+	.period = 1000, //N
+	.callback = NULL,
+	.channels = 
+	{
+		{
+			.mode = PWM_OUTPUT_DISABLED,
+			.callback = NULL
+		},
+		{
+			.mode = PWM_OUTPUT_DISABLED,
+			.callback = NULL
+		},
+		{
+			.mode = PWM_OUTPUT_ACTIVE_LOW,
+			.callback = NULL
+		},
+		{
+			.mode = PWM_OUTPUT_DISABLED,
+			.callback = NULL
+		}
+	}
+};
+
+void handleMessage(CANRxFrame* frame)
+{
+	appsOnePercent = (((frame->data8[1] & 0b1111) << 8) | frame->data8[0]) * SCALEFACTOR;
+	brakeRearPercent = (frame->data8[4] >> 4 | (frame->data8[5] << 4)) * SCALEFACTOR;
+	steeringWheel = ((int16_t) ((frame->data8[7] << 8) | frame->data8[6])) * SCALEFACTORSW;
+}
+
+static THD_WORKING_AREA (canthreadWa, 512);
+
+THD_FUNCTION (canthread, arg)
+{
+	(void) arg;
+	while (true)
+	{
+		CANRxFrame obj;
+		canReceiveTimeout(&CAND1, CAN_ANY_MAILBOX, &obj, TIME_INFINITE);
+
+		if (obj.SID == 0x600)
+		{
+			handleMessage(&obj);
+		}
+	}
+}
 
 int main (void)
 {
@@ -39,13 +100,46 @@ int main (void)
 	canStart (&CAND1, &can1Config);
 	palClearLine (LINE_CAN1_STBY);
 
+	/*
+		Move this into servo header, make a new function servoInit();
+	*/
+	pwmStart (&PWMD3, &pwm3Config);
+
+	// unsigned int deltaTheta = 1;
+	uint16_t deltaTheta = 1;
+	float theta = 0;
+
+	chThdCreateStatic(&canthreadWa, sizeof(canthreadWa), NORMALPRIO, &canthread, NULL);
+
 	// Do nothing.
 	while (true)
 	{
-		chThdSleepMilliseconds (50);
-		DEBUG_PRINTF ("Button 1: %u\r\n", palReadLine (LINE_SERVO_LIMIT_1));
-		DEBUG_PRINTF ("Button 2: %u\r\n", palReadLine (LINE_SERVO_LIMIT_2));
+		// theta = lerp2d(appsOnePercent, 0, -45, 100, 45);
+		theta = lerp2d (steeringWheel, -15, -45, 15, 45);
+		
+		servoSetPosition(theta);
+
+		
+
+		chThdSleepMilliseconds (10);
+
+		// bool minPressed = palReadLine (LINE_SERVO_LIMIT_1);
+		// bool maxPressed = palReadLine (LINE_SERVO_LIMIT_2);
+		// palWriteLine (LINE_LED_HEARTBEAT, minPressed || maxPressed);
+
+		// // time = 750
+		// // 750+1350		
+
+		
+		// unsigned int maxTime = 10000 - time;
+
+		// palWriteLine (LINE_SERVO_PWM, PAL_LOW);
+		// chThdSleepMicroseconds (time);
+		// palWriteLine (LINE_SERVO_PWM, PAL_HIGH);
+		// chThdSleepMicroseconds (maxTime);
 	}
+
+	
 }
 
 // Callbacks ------------------------------------------------------------------------------------------------------------------
