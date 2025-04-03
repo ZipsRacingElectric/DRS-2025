@@ -37,21 +37,21 @@
         Mode="Input"
         Alternate="0" />
       <pin2
-        ID="UART2_TX"
+        ID=""
         Type="PushPull"
         Level="High"
         Speed="Minimum"
-        Resistor="Floating"
-        Mode="Alternate"
-        Alternate="7" />
+        Resistor="PullUp"
+        Mode="Input"
+        Alternate="0" />
       <pin3
-        ID="UART2_RX"
+        ID=""
         Type="PushPull"
         Level="High"
         Speed="Minimum"
-        Resistor="Floating"
-        Mode="Alternate"
-        Alternate="7" />
+        Resistor="PullUp"
+        Mode="Input"
+        Alternate="0" />
       <pin4
         ID="SERVO_EN"
         Type="PushPull"
@@ -215,21 +215,21 @@
         Mode="Input"
         Alternate="0" />
       <pin8
-        ID=""
-        Type="PushPull"
+        ID="I2C1_SCL"
+        Type="OpenDrain"
         Level="High"
         Speed="Minimum"
-        Resistor="PullUp"
-        Mode="Input"
-        Alternate="0" />
+        Resistor="Floating"
+        Mode="Alternate"
+        Alternate="4" />
       <pin9
-        ID=""
-        Type="PushPull"
+        ID="I2C1_SDA"
+        Type="OpenDrain"
         Level="High"
         Speed="Minimum"
-        Resistor="PullUp"
-        Mode="Input"
-        Alternate="0" />
+        Resistor="Floating"
+        Mode="Alternate"
+        Alternate="4" />
       <pin10
         ID=""
         Type="PushPull"
@@ -281,12 +281,12 @@
     </GPIOB>
     <GPIOC>
       <pin0
-        ID=""
+        ID="I_SENSE"
         Type="PushPull"
         Level="High"
         Speed="Minimum"
-        Resistor="PullUp"
-        Mode="Input"
+        Resistor="Floating"
+        Mode="Analog"
         Alternate="0" />
       <pin1
         ID=""
@@ -353,15 +353,15 @@
         Mode="Alternate"
         Alternate="2" />
       <pin9
-        ID="GNSS_INT"
+        ID=""
         Type="PushPull"
         Level="High"
         Speed="Minimum"
-        Resistor="Floating"
+        Resistor="PullUp"
         Mode="Input"
         Alternate="0" />
       <pin10
-        ID="SERVO_LIMIT_1"
+        ID=""
         Type="PushPull"
         Level="High"
         Speed="Minimum"
@@ -369,7 +369,7 @@
         Mode="Input"
         Alternate="0" />
       <pin11
-        ID="SERVO_LIMIT_2"
+        ID=""
         Type="PushPull"
         Level="High"
         Speed="Minimum"

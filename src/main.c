@@ -1,8 +1,8 @@
 // Includes -------------------------------------------------------------------------------------------------------------------
 
 // Includes
-#include "debug.h"
 #include "servo.h"
+#include "debug.h"
 
 // ChibiOS
 #include "ch.h"
@@ -94,7 +94,8 @@ int main (void)
 	chSysInit ();
 
 	// Debug Initialization
-	debugInit ("Drag Reduction Board, Revision AA");
+	ioline_t ledLine = LINE_LED_HEARTBEAT;
+	debugHeartbeatStart (&ledLine, LOWPRIO);
 
 	// CAN Initialization
 	canStart (&CAND1, &can1Config);
@@ -106,7 +107,6 @@ int main (void)
 	pwmStart (&PWMD3, &pwm3Config);
 
 	// unsigned int deltaTheta = 1;
-	uint16_t deltaTheta = 1;
 	float theta = 0;
 
 	chThdCreateStatic(&canthreadWa, sizeof(canthreadWa), NORMALPRIO, &canthread, NULL);
@@ -122,21 +122,6 @@ int main (void)
 		
 
 		chThdSleepMilliseconds (10);
-
-		// bool minPressed = palReadLine (LINE_SERVO_LIMIT_1);
-		// bool maxPressed = palReadLine (LINE_SERVO_LIMIT_2);
-		// palWriteLine (LINE_LED_HEARTBEAT, minPressed || maxPressed);
-
-		// // time = 750
-		// // 750+1350		
-
-		
-		// unsigned int maxTime = 10000 - time;
-
-		// palWriteLine (LINE_SERVO_PWM, PAL_LOW);
-		// chThdSleepMicroseconds (time);
-		// palWriteLine (LINE_SERVO_PWM, PAL_HIGH);
-		// chThdSleepMicroseconds (maxTime);
 	}
 
 	

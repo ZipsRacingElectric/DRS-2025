@@ -13,12 +13,12 @@ BOARDDIR := ./build/board
 # Source files
 CSRC =	$(ALLCSRC)		\
 		src/main.c		\
-		src/debug.c 	\
-		src/servo.c
+		src/servo.c	    
 
 # Common library includes
 include common/src/fault_handler.mk
 include common/src/controls/lerp.mk
+include common/src/debug.mk
 
 # Compiler flags
 USE_OPT = -Og
