@@ -87,6 +87,24 @@ THD_FUNCTION (canthread, arg)
 	}
 }
 
+bool hysteresis(float val, float high, float low, bool state)
+{
+    if (state == 0 && val >= high) return 1;
+    if (state == 1 && val <= low) return 0;
+    return state;
+}
+
+//stub function
+bool checkstall()
+{
+	// I = Va / (R * A)
+	// I_stalled = something
+	// V_r = V_a / A
+
+	volatile bool stubStalled = false;
+	return stubStalled;
+}
+
 int main (void)
 {
 	// ChibiOS Initialization
@@ -106,21 +124,74 @@ int main (void)
 	*/
 	pwmStart (&PWMD3, &pwm3Config);
 
-	// unsigned int deltaTheta = 1;
-	float theta = 0;
 
 	chThdCreateStatic(&canthreadWa, sizeof(canthreadWa), NORMALPRIO, &canthread, NULL);
+
+	//My work :) 
+
+	// float theta = 0;
+
+	float openTheta = 20;
+	float closedTheta = -20;
+	float highThres = 60;
+	float lowThres = 40;
+
+	volatile bool open = 0;
+
+	enum State {
+		OPENSTEADY,
+		OPENTRANSITION,
+		CLOSEDSTEADY,
+		CLOSEDTRANSITION,
+		STALL
+	};
+
+	enum State lastState;
+
+	float target_theta = closedTheta;
+	float theta_step = 0.1;
+	float theta_b = 15;
+
+	volatile bool stall = false;
+
+	float theta_max = 45;
+	float theta_min = -45;
 
 	// Do nothing.
 	while (true)
 	{
-		// theta = lerp2d(appsOnePercent, 0, -45, 100, 45);
-		theta = lerp2d (steeringWheel, -15, -45, 15, 45);
-		
-		servoSetPosition(theta);
+		open = hysteresis (appsOnePercent, highThres, lowThres, open);
 
-		
+		if (open)
+		{
+			target_theta += theta_step;
+			lastState = OPENTRANSITION;
+			if (target_theta > openTheta)
+			{
+				target_theta = openTheta;
+				lastState = OPENSTEADY;
+			}
+		} else {
+			target_theta -= theta_step;
+			lastState = CLOSEDTRANSITION;
+			if (target_theta < closedTheta)
+			{
+				target_theta = closedTheta;
+				lastState = CLOSEDSTEADY;
+			}
+		}
 
+		//check stalling
+
+		if (checkstall() && !stall)
+		{
+			target_theta = (lastState == OPENTRANSITION || lastState == OPENSTEADY) ? target_theta - theta_b : target_theta + theta_b;
+			target_theta = (target_theta < closedTheta) ? closedTheta : target_theta;
+			target_theta = (target_theta > openTheta) ? openTheta : target_theta;
+			stall = true;
+		}
+
+		servoSetPosition (target_theta, theta_min, theta_max);
 		chThdSleepMilliseconds (10);
 	}
 

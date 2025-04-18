@@ -1,6 +1,10 @@
 #pragma once
 
-#define THETA_MIN -45
-#define THETA_MAX 45
+/*
+float theta_min = -45;
+float theta_max = 45;
 
-void servoSetPosition( float theta );
+void servoSetPosition (float theta);
+*/
+
+void servoSetPosition( float theta, float theta_min, float theta_max );
