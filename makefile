@@ -17,11 +17,14 @@ CSRC =	$(ALLCSRC)		\
 
 # Common library includes
 include common/src/fault_handler.mk
-include common/src/controls/lerp.mk
+# include common/src/controls/lerp.mk
 include common/src/debug.mk
+include common/src/peripherals/analog_linear.mk
+include common/src/peripherals/stm_adc.mk
 
 # Compiler flags
-USE_OPT = -Og
+# USE_OPT = -Og
+USE_OPT = -O0
 
 # C macro definitions
 UDEFS =
