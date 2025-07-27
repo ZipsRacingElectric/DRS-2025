@@ -12,6 +12,9 @@
 #include "peripherals/stm_adc.h"
 #include "peripherals/analog_linear.h"
 
+#include "peripherals/mc24lc32.c"
+#include "can/eeprom_can.c"
+
 // CAN Configuration ----------------------------------------------------------------------------------------------------------
 
 /**
@@ -71,6 +74,50 @@ void handleMessage(CANRxFrame* frame)
 	steeringWheel = ((int16_t) ((frame->data8[7] << 8) | frame->data8[6])) * SCALEFACTORSW;
 }
 
+// COMMUNICATION FROM EEPROM TO CAN
+
+#define DRS_CAN_ID_COMMAND 0x754 //(command) or 0x755 (response) // use command address for json
+#define DRS_CAN_ID_RESPONSE 0x755
+
+#define DRS_THREAD_PERIOD TIME_MS2I(250)
+
+#define EEPROM_MAGIC_STRING "DRS-2025"
+#define MC24LC32_ADDRS 0x50 // First memory address available for EEPROM
+
+static const I2CConfig I2C1_CONFIG = 
+{
+	.op_mode = OPMODE_I2C,
+	.clock_speed = 400000,
+	.duty_cycle = FAST_DUTY_CYCLE_2
+};
+
+static const mc24lc32Config_t eeprom_config = {
+	.addr = MC24LC32_ADDRS, 
+	.i2c = &I2CD1,
+	.timeout = TIME_MS2I(500),
+	.magicString = EEPROM_MAGIC_STRING,
+};
+
+mc24lc32_t eeprom_driver;
+
+// theta_min, theta_max, theta_step, theta_b, theta_backoff
+// target_theta, openTheta, closedTheta -> order for theta_config_t
+
+/**
+ * @brief Initializes the mc24lc32 and i2c drivers to prepare for CAN
+ * communication
+ */
+void mc24lc32_i2c_init() 
+{
+	if (i2cStart (&I2CD1, &I2C1_CONFIG) != MSG_OK)
+		while (true) {};
+
+	if (!mc24lc32Init (&eeprom_driver, &eeprom_config) && eeprom_driver.state == MC24LC32_STATE_FAILED)
+		while (true) {}; 
+}
+
+
+
 static THD_WORKING_AREA (canthreadWa, 512);
 
 THD_FUNCTION (canthread, arg)
@@ -79,11 +126,18 @@ THD_FUNCTION (canthread, arg)
 	while (true)
 	{
 		CANRxFrame obj;
+
 		canReceiveTimeout(&CAND1, CAN_ANY_MAILBOX, &obj, TIME_INFINITE);
 
 		if (obj.SID == 0x600)
 		{
 			handleMessage(&obj);
+		}
+
+		if (obj.SID == DRS_CAN_ID_COMMAND) //command
+		{
+			eepromHandleCanCommand (&obj, &CAND1, (eeprom_t*) &eeprom_driver); // (eeprom_t) &eeprom_driver
+			//can I use the eeprom_driver or need to make own eeprom_t?
 		}
 	}
 }
@@ -93,17 +147,6 @@ bool hysteresis(float val, float high, float low, bool state)
     if (state == 0 && val >= high) return 1;
     if (state == 1 && val <= low) return 0;
     return state;
-}
-
-//stub function
-bool checkstall()
-{
-	// I = Va / (R * A)
-	// I_stalled = something
-	// V_r = V_a / A
-
-	volatile bool stubStalled = false;
-	return stubStalled;
 }
 
 int main (void)
@@ -119,19 +162,13 @@ int main (void)
 	// CAN Initialization
 	canStart (&CAND1, &can1Config);
 	palClearLine (LINE_CAN1_STBY);
-
-	/*
-		Move this into servo header, make a new function servoInit();
-	*/
 	pwmStart (&PWMD3, &pwm3Config);
+
+	mc24lc32_i2c_init();
 
 
 	chThdCreateStatic(&canthreadWa, sizeof(canthreadWa), NORMALPRIO, &canthread, NULL);
 
-	//My work :) 
-
-	float openTheta = 20;
-	float closedTheta = -20;
 	float highThres = 60;
 	float lowThres = 40;
 
@@ -147,36 +184,23 @@ int main (void)
 
 	enum State lastState;
 
-	float target_theta = closedTheta;
-	// float target_theta = openTheta;
-	// float theta_step = 0.1;
-	float theta_step = 0.25;
-	float theta_b = 15;
+	// float theta_b = 15;
 
 	volatile bool stall = false;
-
-	float theta_max = 45;
-	float theta_min = -45;
 
 	const float R_SHUNT = 0.1;
 	const float CURRENT_GAIN = 50;
 
-	// float I_stall = 1; //Amp
-	// float I_stall = 0.5;
-	float I_stall = 0.6594;
-	// float I_stall = 0.69;
+	float I_stall = 0.6594; //Amp(s)
 
 	volatile int stall_max_count = 25; // amount where if stall exceeds this number, stall conditions execute
 	volatile int stall_cur_count = 0; // current stall counter
 	
-	volatile float theta_backoff = closedTheta; // holder value
+	// volatile float theta_backoff = closedTheta; // holder value
 
 	volatile float sleep_amount = 10; // ms
 
 	volatile float t_stall = stall_max_count * sleep_amount; // ms
-
-	volatile float theta_backoff_prime = t_stall * theta_step + theta_b;
-	volatile float theta_actual = target_theta - t_stall * theta_step;
 
 	linearSensor_t output_current;
 
@@ -212,17 +236,6 @@ int main (void)
 		// the servo
 		float i = output_current.value;
 
-		// i >= I_stall -> stalled
-		// i < I_stall -> ~stalled
-		// if (i >= I_stall) { 
-		// 	stall = true; 
-		// }
-		// else { 
-		// 	stall = false; 
-		// }
-
-		// stall_cur_count = stall_cur_count;
-
 		if (i >= I_stall)
 		{
 			++stall_cur_count;
@@ -242,116 +255,62 @@ int main (void)
 	linearSensorInit (&output_current, &output_current_config);
 	stmAdcInit (&adc, &adc_config);
 
-	// Do nothing.
+	volatile float theta_backoff_prime = t_stall * theta_config.theta_step + theta_config.theta_b;
+	volatile float theta_actual = theta_config.theta_target - t_stall * theta_config.theta_step;
+
 	while (true)
 	{
-		// normal functioning, should still be here after everything is done
 		open = hysteresis (appsOnePercent, highThres, lowThres, open);
-		// open = 0;
 
 
 		if (stall)
 		{
-			//old code:
-			// theta_backoff = (lastState == OPENTRANSITION || lastState == OPENSTEADY) ? target_theta - theta_b : target_theta + theta_b;
+			theta_config.theta_backoff = 
+			(lastState == OPENTRANSITION || lastState == OPENSTEADY) 
+				? theta_config.theta_target - theta_backoff_prime 
+				: theta_config.theta_target + theta_backoff_prime;
+
+			theta_config.theta_backoff = (theta_config.theta_backoff < theta_config.theta_closed) 
+				? theta_config.theta_closed 
+				: theta_config.theta_backoff;
+
+			servoSetPosition (theta_config.theta_backoff, theta_config.theta_min, theta_config.theta_max);
 			
-			// //clamping so no out of bounds
-			// theta_backoff = (target_theta < closedTheta) ? closedTheta : theta_backoff;
-			// theta_backoff = (target_theta > openTheta) ? openTheta : theta_backoff;
-
-			// // +, -
-			// theta_backoff_prime = (lastState == OPENTRANSITION || lastState == OPENSTEADY) ? t_stall * theta_step + theta_backoff : -(t_stall * theta_step + theta_backoff);
-
-			// //clamping so no out of bounds
-			// theta_backoff_prime = (theta_backoff_prime < closedTheta) ? closedTheta : theta_backoff_prime;
-			// theta_backoff_prime = (theta_backoff_prime > openTheta) ? openTheta : theta_backoff_prime;
-
-			// servoSetPosition (theta_backoff, theta_min, theta_max);
-
-			theta_backoff = (lastState == OPENTRANSITION || lastState == OPENSTEADY) ?  target_theta - theta_backoff_prime : target_theta + theta_backoff_prime;
- 
-			//clamping stuff
-			theta_backoff = (theta_backoff < closedTheta) ? closedTheta : theta_backoff;
-			theta_backoff = (theta_backoff > openTheta) ? openTheta : theta_backoff;
-
-			servoSetPosition (theta_backoff, theta_min, theta_max);
-
 		} else {
 			checkStall();
 
 
 			if (open)
 			{
-				target_theta += theta_step;
+
+				theta_config.theta_target += theta_config.theta_step;
 				lastState = OPENTRANSITION;
-				if (target_theta > openTheta)
+
+				if (theta_config.theta_target > theta_config.theta_open)
 				{
-					target_theta = openTheta;
+
+					theta_config.theta_target = theta_config.theta_open;
 					lastState = OPENSTEADY;
+
 				}
 			} else {
-				target_theta -= theta_step;
+
+				theta_config.theta_target -= theta_config.theta_step;
 				lastState = CLOSEDTRANSITION;
-				if (target_theta < closedTheta)
+
+				if (theta_config.theta_target < theta_config.theta_closed)
 				{
-					target_theta = closedTheta;
+
+					theta_config.theta_target = theta_config.theta_closed;
 					lastState = CLOSEDSTEADY;
+
 				}
 			}
-
-			/*
-				TODO: Test servo for incorrect stalling, also check about whether or not my code is
-				necessarily working for checking current and for the sort
-
-				Logs and such:
-				5/3:
-				Double check that I_stall value is correct and works
-				- changes: changed I_stall to work whenever current is higher than normal
-					previous values were not as successful in indicating that or just movement
-			*/
 			
-			servoSetPosition (target_theta, theta_min, theta_max);			
-
+			servoSetPosition (theta_config.theta_target, theta_config.theta_min, theta_config.theta_max);		
 		}
 
-
-
 		chThdSleepMilliseconds (sleep_amount);
-		
-		// if (open)
-		// {
-		// 	target_theta += theta_step;
-		// 	lastState = OPENTRANSITION;
-		// 	if (target_theta > openTheta)
-		// 	{
-		// 		target_theta = openTheta;
-		// 		lastState = OPENSTEADY;
-		// 	}
-		// } else {
-		// 	target_theta -= theta_step;
-		// 	lastState = CLOSEDTRANSITION;
-		// 	if (target_theta < closedTheta)
-		// 	{
-		// 		target_theta = closedTheta;
-		// 		lastState = CLOSEDSTEADY;
-		// 	}
-		// }
-
-		//check stalling
-
-		// if (checkStall() && !stall)
-		// if (!stall && checkStall())
-		// {
-		// 	target_theta = (lastState == OPENTRANSITION || lastState == OPENSTEADY) ? target_theta - theta_b : target_theta + theta_b;
-		// 	target_theta = (target_theta < closedTheta) ? closedTheta : target_theta;
-		// 	target_theta = (target_theta > openTheta) ? openTheta : target_theta;
-		// 	stall = true;
-		// } else {
-		// 	servoSetPosition (target_theta, theta_min, theta_max);
-		// }
-
-		
-		// chThdSleepMilliseconds (10);
 	}
 
 	
@@ -362,4 +321,6 @@ int main (void)
 void hardFaultCallback (void)
 {
 	// TODO(Barach): Fault behavior
+	while (true)
+	{}
 }

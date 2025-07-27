@@ -1,6 +1,6 @@
 {
-	"C_Cpp.intelliSenseEngine": "disabled",
-	"C_Cpp.default.intelliSenseMode": "linux-gcc-arm",
+	"C_Cpp.intelliSenseEngine": "default",
+	"C_Cpp.default.intelliSenseMode": "linux-gcc-arm64",
 	"clangd.arguments":
 	[
 		"-log=verbose",
