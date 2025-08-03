@@ -2,9 +2,13 @@
 #include "hal.h"
 #include "controls/lerp.h"
 
+// REVIEW(Barach): These values are specific to the servo in use, so they'll need moved into the EEPROM for when we test with
+// the actual wing servo. (I might've said this was fine as a constant earlier, my bad).
 #define T_MIN 90
 #define T_MAX 211
 
+// REVIEW(Barach): Instead of a global instance of theta_config_t, this should be a global pointer to a theta_config_t struct
+// (this means it cannot have default values). This is elaborated on a bit more in main.c.
 theta_config_t theta_config = {
     -45,
     45,
