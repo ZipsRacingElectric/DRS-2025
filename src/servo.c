@@ -2,32 +2,31 @@
 #include "hal.h"
 #include "controls/lerp.h"
 
-// REVIEW(Barach): These values are specific to the servo in use, so they'll need moved into the EEPROM for when we test with
-// the actual wing servo. (I might've said this was fine as a constant earlier, my bad).
-#define T_MIN 90
-#define T_MAX 211
+// THESE ARE TEMPLATE VALUES, THE ACTUAL VALUES MAY BE DIFFERENT
+// theta_values_t theta_vals = {
+//     float angle_min                = -45, 
+//     float angle_max                = 45,  
+//     float angle_step               = 0.25,
+//     float angle_b                  = 15,  
+//     float angle_backoff            = -20, 
+//     float angle_target             = -20,
+//     float angle_open               = 20,
+//     float angle_closed             = -20,
+//     float high_thres               = 60,
+//     float low_thres                = 40,
+//     float i_stall                  = 0.6594,
+//     uint8_t stall_max_count        = 25,
+//     uint32_t servo_pwm_min         = 90,
+//     uint32_t servo_pwm_max         = 211
+// };
+theta_values_t* theta_vals;
 
-// REVIEW(Barach): Instead of a global instance of theta_config_t, this should be a global pointer to a theta_config_t struct
-// (this means it cannot have default values). This is elaborated on a bit more in main.c.
-theta_config_t theta_config = {
-    -45,
-    45,
-    0.25,
-    15,
-    -20,
-    -20,
-    20,
-    -20
-};
 
-void servoSetPosition( float theta, float theta_min, float theta_max )
+void servoSetPosition( float angle, float angle_min, float angle_max )
 {
-    uint16_t n = lerp2d(theta, theta_min, T_MIN, theta_max, T_MAX);
+    
+    uint16_t n = lerp2d(angle, angle_min, theta_vals->servo_pwm_min, angle_max, theta_vals->servo_pwm_max);
 
     pwmEnableChannel (&PWMD3, 2, n);
-
-    // Since this function is called generally each loop, saving to eeprom 
-    // in here as well seems ok, but done in main.c for clarity sake
-
-
+    
 }

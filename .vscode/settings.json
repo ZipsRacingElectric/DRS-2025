@@ -8,5 +8,6 @@
 		"--background-index",
 		"--compile-commands-dir=./build/",
 		"-header-insertion=never"
-	]
+	],
+	"C_Cpp.errorSquiggles": "disabled"
 }
