@@ -1,15 +1,13 @@
 #include "peripherals.h"
 
-// Global-ish Variables
 
-// Custom ADC and Sensor objects to read shunt resistor to gauge where stall may have taken place
-// See ref. in 
-//           * stm_adc.h in common/src/peripherals
-//           * analog_linear.h in common/src/peripherals
+const float R_SHUNT = 0.1;
+const float CURRENT_GAIN = 50;
 
-extern mc24lc32_t eeprom_driver;
+int stall_cur_count = 0; // current stall counter
 
-extern linearSensor_t output_current;
+mc24lc32_t eeprom_driver;
+linearSensor_t output_current;
 
 // LinearSensor configuration to be used by the adc later in the code, more explained in ADC part
 linearSensorConfig_t output_current_config = {
@@ -46,7 +44,7 @@ stmAdcConfig_t adc_config = {
  * @return true  -> stall HAS been met
  * @return false -> stall has NOT been met
  */
-bool checkStall()
+bool checkStall(bool* stall)
 {
     // Gather a sample of the adc 
     // Reference in stm_adc.h for more information
@@ -57,7 +55,7 @@ bool checkStall()
     float i = output_current.value;
 
     // if "i" is greater than the stall, increment the current counter, otherwise set to false
-    if (i >= I_stall)
+    if (i >= theta_vals->i_stall)
     {
         ++stall_cur_count;
     }
@@ -68,10 +66,10 @@ bool checkStall()
     // If "i" is greater or equal to the max stall count make stall true
     if (stall_cur_count >= theta_vals->stall_max_count)
     {
-        stall = true;
+        (*stall) = true;
     }
 
-    return stall;
+    return *stall;
 }
 
 /**

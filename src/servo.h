@@ -1,6 +1,9 @@
 
+#include <stdint.h>
+
 #ifndef SERVO_H
 #define SERVO_H
+
 
 /**
  * @brief Basic struct variable definitions and documentation for theta_vals.

@@ -1,21 +1,3 @@
-// Review Notes ---------------------------------------------------------------------------------------------------------------
-//
-// REVIEW(Barach): I would consider creating a set of peripherals.c / .h files to clean up the code a bit more. In general, the
-// peripherals.c / .h should contain any code related to the board's hardware (configs, servo, current sensor, EEPROM, CAN1,
-// etc.). I put a couple of notes on things I'd consider moving.
-//
-// REVIEW(Barach): While the EEPROM is being initialized and used correctly (eepromHandleCanCommand) the data within it isn't
-// actually used anywhere. For instance, THETA_MIN in the EEPROM (addr 0x0010) doesn't interract with theta_min in servo.c,
-// they're just 2 different things with the same name right now. Take a look at the BMS's eeprom_map.c / .h files for how the
-// mapping struct should be defined. After the EEPROM is initialized (mc24lc32Init), the struct needs cast on top of the
-// EEPROM's cache (this is done is peripherals.c for the BMS).
-//
-// REVIEW(Barach): Could do for more documentation on the servo behavior, variables names, and state meaning. Both you and I
-// know as we worked on this together, but future developers will be lost. Some parts I'd say need attention
-// - Meanings and units of the fields in theta_config.
-// - Meanings of the State enum.
-// - Control flow in the main loop (lines 305 to 370).
-
 // Includes -------------------------------------------------------------------------------------------------------------------
 
 // Includes
@@ -27,11 +9,18 @@
 #include "hal.h"
 
 #include "controls/lerp.h"
-#include "peripherals/stm_adc.h"
-#include "peripherals/analog_linear.h"
+// #include "peripherals/stm_adc.h"
+#include "peripherals/adc/stm_adc.h"
+// #include "peripherals/analog_linear.h"
+#include "peripherals/adc/analog_linear.h"
 
-#include "peripherals/mc24lc32.c"
-#include "can/eeprom_can.c"
+#include "peripherals/i2c/mc24lc32.h"
+#include "can/can_thread.h"
+#include "can/eeprom_can.h"
+
+#include "peripherals.h"
+
+void hardFaultCallback (void);
 
 // CAN Configuration ----------------------------------------------------------------------------------------------------------
 
@@ -85,7 +74,7 @@ static const PWMConfig pwm3Config =
 	}
 };
 
-void handleMessage(CANRxFrame* frame)
+void receiveMessage(CANRxFrame* frame)
 {
 	appsOnePercent = (((frame->data8[1] & 0b1111) << 8) | frame->data8[0]) * SCALEFACTOR;
 	brakeRearPercent = (frame->data8[4] >> 4 | (frame->data8[5] << 4)) * SCALEFACTOR;
@@ -100,11 +89,12 @@ void handleMessage(CANRxFrame* frame)
  * 
  * @note If EEPROM fails at initializing, hardFaultCallback() will be called 
  */
-void mc24lc32_i2c_init() 
+void mc24lc32_i2c_init(void) 
 {
 	// Ensure I2C works alright, i2cStart is a chibios function
 	// See pg.259 of the ChibiOS HAL Reference Manual for more info
-	if (i2cStart (&I2CD1, &I2C1_CONFIG) != MSG_OK)
+	i2cStart (&I2CD1, &I2C1_CONFIG);
+	if (i2cGetErrors(&I2CD1) != 0)
 		hardFaultCallback();
 
 	// Ensure EEPROM init works alright and driver hasn't failed
@@ -118,8 +108,6 @@ void mc24lc32_i2c_init()
 	// Cast then assign the mc24lc32_t object's member variable "cache" to theta_vals
 	theta_vals = (theta_values_t*) eeprom_driver.cache;
 
-	// Breakpoint yessir
-	__BKPT__();
 }
 
 
@@ -141,9 +129,9 @@ THD_FUNCTION (canthread, arg)
 
 		canReceiveTimeout(&CAND1, CAN_ANY_MAILBOX, &obj, TIME_INFINITE);
 
-		if (obj.SID == 0x600)
+		if (obj.SID == 0x600) // receive
 		{
-			handleMessage(&obj);
+			receiveMessage(&obj);
 		}
 
 		if (obj.SID == DRS_CAN_ID_COMMAND) //command
@@ -152,6 +140,36 @@ THD_FUNCTION (canthread, arg)
 		}
 	}
 }
+
+/**
+ * @brief function to handle Can messages
+ * 
+ * @todo Make this like a canReceiveHandler_t
+ */
+void handleCanMessage(CANRxFrame obj) // passing by reference??
+{
+	if (obj.SID == 0x600) // receive
+	{
+		receiveMessage(&obj);
+	}
+
+	if (obj.SID == DRS_CAN_ID_COMMAND) //command
+	{
+		eepromHandleCanCommand (&obj, &CAND1, (eeprom_t*) &eeprom_driver); 
+	}
+}
+
+// static const canThreadConfig_t CAN1_RX_THREAD_CONFIG =
+// {
+// 	.name = "drs_can1_rx",
+// 	.driver = &CAND1,
+// 	.period = TIME_MS2I (10),
+// 	.nodes = NULL,
+// 	.nodeCount = 0,
+// 	.rxHandler = (canReceiveHandler_t*) &handleCanMessage,
+// 	.bridgeDriver = NULL
+// };
+
 
 /**
  * @brief Returns a new boolean state based on high, low, and val. 
@@ -186,7 +204,7 @@ bool hysteresis(float val, float high, float low, bool state)
  * @return true -> wing opens up (turns clockwise in our current example)
  * @return false -> wing closes (turns counterclosewise in our current example as well)
  */
-bool getWingState(void)
+bool getWingState(bool open)
 {
 	return hysteresis (appsOnePercent, theta_vals->high_thres, theta_vals->low_thres, open);
 }
@@ -208,6 +226,10 @@ int main (void)
 
 	chThdCreateStatic(&canthreadWa, sizeof(canthreadWa), NORMALPRIO, &canthread, NULL);
 
+	peripheralsInit();
+
+	// canThreadStart (&canthreadWa, sizeof(canthreadWa), NORMALPRIO, &CAN1_RX_THREAD_CONFIG);
+
 	bool open = 0;
 
 	enum State {
@@ -222,23 +244,20 @@ int main (void)
 
 	bool stall = false;
 
-	const float R_SHUNT = 0.1;
-	const float CURRENT_GAIN = 50;
-
-	int stall_cur_count = 0; // current stall counter
+	
 
 	// both in milliseconds
 	float sleep_amount = 10;
-	float t_stall = stall_max_count * sleep_amount;
+	float t_stall = theta_vals->stall_max_count * sleep_amount;
 	//
 
 
 	float angle_backoff_prime = t_stall * theta_vals->angle_step + theta_vals->angle_b;
-	float theta_actual = theta_vals->angle_target - t_stall * theta_vals->angle_step;
+	// float theta_actual = theta_vals->angle_target - t_stall * theta_vals->angle_step;
 
 	while (true)
 	{
-		open = getWingState();
+		open = getWingState(&open);
 
 
 		if (stall)
@@ -249,13 +268,13 @@ int main (void)
 				: theta_vals->angle_target + angle_backoff_prime;
 
 			theta_vals->angle_backoff = (theta_vals->angle_backoff < theta_vals->angle_closed) 
-				? theta_vals->theta_closed 
+				? theta_vals->angle_closed 
 				: theta_vals->angle_backoff;
 
 			servoSetPosition (theta_vals->angle_backoff, theta_vals->angle_min, theta_vals->angle_max);
 			
 		} else {
-			stall = checkStall();
+			stall = checkStall(&stall);
 
 
 			if (open)

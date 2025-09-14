@@ -13,14 +13,24 @@ BOARDDIR := ./build/board
 # Source files
 CSRC =	$(ALLCSRC)		\
 		src/main.c		\
-		src/servo.c
+		src/servo.c		\
+		src/peripherals.c
 
 # Common library includes
 include common/src/fault_handler.mk
+
+
 # include common/src/controls/lerp.mk
 include common/src/debug.mk
-include common/src/peripherals/analog_linear.mk
-include common/src/peripherals/stm_adc.mk
+# include common/src/peripherals/analog_linear.mk
+
+include common/src/peripherals/adc/analog_linear.mk
+include common/src/peripherals/adc/stm_adc.mk
+
+include common/src/can/can_thread.mk
+include common/src/can/eeprom_can.mk
+
+include common/src/peripherals/i2c/mc24lc32.mk
 
 # Compiler flags
 # USE_OPT = -Og

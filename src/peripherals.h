@@ -1,3 +1,8 @@
+#include "common/src/peripherals/i2c/mc24lc32.h"
+#include "common/src/peripherals/adc/analog_linear.h"
+#include "common/src/peripherals/adc/stm_adc.h"
+#include "src/servo.h"
+
 #ifndef PERIPHERALS_H
 #define PERIPHERALS_H
 
@@ -7,6 +12,16 @@
 #define DRS_THREAD_PERIOD TIME_MS2I(250) // The amount of time for a thread to communicate
 #define EEPROM_MAGIC_STRING "DRS-2025" // Just the name for some string to act as a key
 #define MC24LC32_ADDRS 0x50 // EEPROM I2C Memory Address
+
+// Global-ish Variables
+
+// Custom ADC and Sensor objects to read shunt resistor to gauge where stall may have taken place
+// See ref. in 
+//           * stm_adc.h in common/src/peripherals
+//           * analog_linear.h in common/src/peripherals
+extern mc24lc32_t eeprom_driver;
+extern linearSensor_t output_current;
+
 
 // Standard I2C config for the board
 static const I2CConfig I2C1_CONFIG = 
@@ -22,7 +37,33 @@ static const mc24lc32Config_t EEPROM_CONFIG = {
 	.i2c = &I2CD1,
 	.timeout = TIME_MS2I(500),
 	.magicString = EEPROM_MAGIC_STRING,
+	.dirtyHook = NULL
 }; 
 
+/**
+ * @brief Initialize the mc24lc32 with I2C communication
+ * @todo Better detailed documentation would be nice
+ */
+void mc24lc32_i2c_init(void);
+
+/**
+ * @todo ADD DOCUMENTATION :)
+ * 
+ * @brief 
+ * 
+ * @param stall 
+ * @return true 
+ * @return false 
+ */
+bool checkStall(bool* stall);
+
+/**
+ * @brief Initializes all sensors and EEPROM to be read and written to
+ * 
+ * Current rendition:
+ *  - Includes linearSensor and stmAdc to read current from shunt resistor
+ *  - Also has EEPROM inits to read and write from and to.
+ */
+void peripheralsInit(void);
 
 #endif
