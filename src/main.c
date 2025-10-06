@@ -42,6 +42,11 @@ static const CANConfig can1Config =
 #define SCALEFACTOR 0.02442002442002442
 #define SCALEFACTORSW 0.005493247882810711
 
+
+// DRS Macros
+#define DRS_CAN_TRNS_ID 0x7A4
+#define DRS_CAN_THTA_TRGT_SF (360.0f / 1024.0f)
+
 float appsOnePercent;
 float brakeRearPercent;
 float steeringWheel;
@@ -74,6 +79,12 @@ static const PWMConfig pwm3Config =
 	}
 };
 
+/**
+ * @brief Receives a CANRxFrame and processes out several different can signals for 
+ * future processing (particularly with appsOnePercent, brakeRearPercent, etc.)
+ * 
+ * @param frame[in] the frame that you want to process, comes from the CAN Signal thread
+ */
 void receiveMessage(CANRxFrame* frame)
 {
 	appsOnePercent = (((frame->data8[1] & 0b1111) << 8) | frame->data8[0]) * SCALEFACTOR;
@@ -104,6 +115,8 @@ void mc24lc32_i2c_init(void)
 	if (!mc24lc32Init (&eeprom_driver, &EEPROM_CONFIG) && eeprom_driver.state == MC24LC32_STATE_FAILED)
 		hardFaultCallback(); 
 
+	
+
 	// "Read" the eeprom's data (or in other words): 
 	// Cast then assign the mc24lc32_t object's member variable "cache" to theta_vals
 	theta_vals = (theta_values_t*) eeprom_driver.cache;
@@ -116,7 +129,7 @@ void mc24lc32_i2c_init(void)
  * 		  This is mainly ChibiOS stuff
  * 		  See ref. src/can/can_thread.h for more info.
  * 
- * @todo Clean this up last using more simple code, look to BMS-2025, blob/main/src/can_vehicle.c
+ * @todo Potential: Clean this up last using more simple code, look to BMS-2025, blob/main/src/can_vehicle.c
  */
 static THD_WORKING_AREA (canthreadWa, 512);
 
@@ -142,11 +155,12 @@ THD_FUNCTION (canthread, arg)
 }
 
 /**
- * @brief function to handle Can messages
+ * @brief Void Function to Handle Incoming Can Frames with both EEPROM and Can Signal 
+ * receive (read) / command (write) operations
  * 
- * @todo Make this like a canReceiveHandler_t
+ * @param obj 	The CANRxFrame that you send from the canthread to then be processed
  */
-void handleCanMessage(CANRxFrame obj) // passing by reference??
+void handleCanMessage(CANRxFrame obj) 
 {
 	if (obj.SID == 0x600) // receive
 	{
@@ -158,18 +172,6 @@ void handleCanMessage(CANRxFrame obj) // passing by reference??
 		eepromHandleCanCommand (&obj, &CAND1, (eeprom_t*) &eeprom_driver); 
 	}
 }
-
-// static const canThreadConfig_t CAN1_RX_THREAD_CONFIG =
-// {
-// 	.name = "drs_can1_rx",
-// 	.driver = &CAND1,
-// 	.period = TIME_MS2I (10),
-// 	.nodes = NULL,
-// 	.nodeCount = 0,
-// 	.rxHandler = (canReceiveHandler_t*) &handleCanMessage,
-// 	.bridgeDriver = NULL
-// };
-
 
 /**
  * @brief Returns a new boolean state based on high, low, and val. 
@@ -201,6 +203,8 @@ bool hysteresis(float val, float high, float low, bool state)
  * may be and if it is currently in an "opening" true or "closing" false state
  * (NOT NECESSARILY A State struct just yet)
  * 
+ * @todo: Update code here to be based on what we'd like to include / modify
+ * 
  * @return true -> wing opens up (turns clockwise in our current example)
  * @return false -> wing closes (turns counterclosewise in our current example as well)
  */
@@ -221,6 +225,7 @@ int main (void)
 
 	// CAN Initialization
 	canStart (&CAND1, &can1Config);
+
 	palClearLine (LINE_CAN1_STBY);
 	pwmStart (&PWMD3, &pwm3Config);
 
@@ -228,38 +233,79 @@ int main (void)
 
 	peripheralsInit();
 
-	// canThreadStart (&canthreadWa, sizeof(canthreadWa), NORMALPRIO, &CAN1_RX_THREAD_CONFIG);
-
+	// Initialize:
+	// lastState to a placeholder value
+	// open to 0
+	// stall to 1
 	bool open = 0;
 
 	enum State {
-		DRS_OPEN_STEADY,
-		DRS_OPEN_TRANSITION,
-		DRS_CLOSED_STEADY,
-		DRS_CLOSED_TRANSITION,
-		DRS_STALL
+		DRS_OPEN_STEADY 	  = 0,
+		DRS_OPEN_TRANSITION   = 1,
+		DRS_CLOSED_STEADY	  = 2,
+		DRS_CLOSED_TRANSITION = 3,
+		DRS_STALL			  = 4
 	};
 
-	enum State lastState;
+	enum State lastState = DRS_OPEN_STEADY; 
 
 	bool stall = false;
 
-	
+
+	// Initialize con't:
+	// canTransmitFrame 
+	CANTxFrame canTransmitFrame = { 
+		.DLC = 2,
+		.RTR = 0, 
+		.IDE = CAN_IDE_EXT,
+		.EID = (uint32_t) DRS_CAN_TRNS_ID,
+	};
 
 	// both in milliseconds
 	float sleep_amount = 10;
+
+	// the amount of time that passes when stall is being count
 	float t_stall = theta_vals->stall_max_count * sleep_amount;
-	//
 
-
+	// variable to help calculate the true backoff when stalling occurs in terms of angle_step and and the
+	// real world predicted placement of the servo. (Since we're counting up until a stall condition is met,
+	// and the servo is still moving in that time)
 	float angle_backoff_prime = t_stall * theta_vals->angle_step + theta_vals->angle_b;
-	// float theta_actual = theta_vals->angle_target - t_stall * theta_vals->angle_step;
 
 	while (true)
 	{
-		open = getWingState(&open);
+		// Read the Servo state from the function.
+		open = getWingState(open);
 
 
+		// Sending CAN Signals:
+
+		// convert to 10 bit representation (for angle_target):
+		// from [-20,20] -> [0, 1023]
+		int32_t raw_count = (int32_t) ((theta_vals->angle_target + 180) * (1 / DRS_CAN_THTA_TRGT_SF));
+
+		// pack based on the DBC file with Intel Style (Little-Endian)
+		uint16_t package = 
+			((uint16_t)(raw_count & 0x3FF) & 0x3FF) |
+			(((uint8_t) lastState & 0x7) << 10) |
+			(((uint8_t) eeprom_driver.state & 0x3) << 13) |
+			(((uint8_t) stall & 0x1) << 15);
+		
+		// assign canTransmitFrame to include the package for the first 16 bits.
+		canTransmitFrame.data16 [0] = package;
+
+		// Send the frame and check if it went alright, if not, signal an error w/ hard fault callback
+		msg_t canTransmitMessage = canTransmitTimeout(&CAND1, CAN_ANY_MAILBOX, &canTransmitFrame, TIME_MS2I(10));
+
+		if (canTransmitMessage != MSG_OK)
+		{
+			hardFaultCallback();
+		}
+
+		// move servo around based if stall has or hasn't been met. if stalled, it should move away first,
+		// then stay still. Otherwise move within bounds
+
+		// Update lastState as well to reflect changing angular positions
 		if (stall)
 		{
 			theta_vals->angle_backoff = 
@@ -273,6 +319,7 @@ int main (void)
 
 			servoSetPosition (theta_vals->angle_backoff, theta_vals->angle_min, theta_vals->angle_max);
 			
+			lastState = DRS_STALL;
 		} else {
 			stall = checkStall(&stall);
 
@@ -306,6 +353,7 @@ int main (void)
 			servoSetPosition (theta_vals->angle_target, theta_vals->angle_min, theta_vals->angle_max);		
 		}
 
+		// Sleep so it's not high enough priority compared to other more important signals
 		chThdSleepMilliseconds (sleep_amount);
 	}
 

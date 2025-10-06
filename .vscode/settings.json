@@ -12,5 +12,6 @@
 	"C_Cpp.errorSquiggles": "disabled",
 	"files.associations": {
 		"stm_adc.h": "c"
-	}
+	},
+	"makefile.configureOnOpen": false
 }

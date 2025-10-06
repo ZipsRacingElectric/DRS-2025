@@ -1,7 +1,7 @@
-#include "common/src/peripherals/i2c/mc24lc32.h"
-#include "common/src/peripherals/adc/analog_linear.h"
-#include "common/src/peripherals/adc/stm_adc.h"
-#include "src/servo.h"
+#include "peripherals/i2c/mc24lc32.h"
+#include "peripherals/adc/analog_linear.h"
+#include "peripherals/adc/stm_adc.h"
+#include "servo.h"
 
 #ifndef PERIPHERALS_H
 #define PERIPHERALS_H
@@ -47,13 +47,11 @@ static const mc24lc32Config_t EEPROM_CONFIG = {
 void mc24lc32_i2c_init(void);
 
 /**
- * @todo ADD DOCUMENTATION :)
- * 
- * @brief 
+ * @brief Checks if stall conditions have been met and returns if so 
  * 
  * @param stall 
- * @return true 
- * @return false 
+ * @return true stall has been met
+ * @return false stall hasn't been met
  */
 bool checkStall(bool* stall);
 
