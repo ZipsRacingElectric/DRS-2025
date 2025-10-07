@@ -24,7 +24,7 @@ theta_values_t* theta_vals;
 
 void servoSetPosition( float angle, float angle_min, float angle_max )
 {
-    
+    // REVIEW(Barach): Documentation and naming. What does n mean here?
     uint16_t n = lerp2d(angle, angle_min, theta_vals->servo_pwm_min, angle_max, theta_vals->servo_pwm_max);
 
     pwmEnableChannel (&PWMD3, 2, n);

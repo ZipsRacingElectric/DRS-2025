@@ -1,4 +1,29 @@
+// REVIEW(Barach): Way too much going on in this file. Things should be split up into the below structure:
+
+// src
+// ├── can
+// │   ├── receive.c        - Should contain all function prototypes and implementations for receiving CAN messages.
+// │   ├── receive.h        - Should contain the prototype for one function called 'receiveMessage'. This function should
+// │   │                      implement the 'canReceiveHandler_t' signature.
+// │   ├── transmit.h       - Should contain 1 prototype for each unique CAN message the DRS transmits.
+// │   └── transmit.c       - Should contain 1 implementation per prototype in the header.
+// ├── can.c                - Should include all configurations structs and code for initializing the CAN driver & CAN thread.
+// ├── can.h                - Should include 1 function prototype called 'canInterfaceInit'.
+// ├── main.c               - Should include the main functionality of the application. This can keep the wing state, target
+// │                          angle, and the APPS hysteresis.
+// ├── peripherals
+// │   ├── eeprom_map.h     - Should define a single structure called 'eepromMap_t'. This should define the memory map of the
+// │   │                      device's EEPROM.
+// │   ├── servo.c          - Should only contain function implementations related to the servo.
+// │   └── servo.h          - Should only contain function prototypes related to the servo.
+// ├── peripherals.c        - Should contain all configurations and code for initializing board hardware (excluding CAN).
+// └── peripherals.h        - Should contain a 'peripheralsInit' function prototype and an external instance of the eepromMap_t
+//                            structure.
+
 // Includes -------------------------------------------------------------------------------------------------------------------
+
+// REVIEW(Barach): Includes need cleaned up. Too difficult to tell what functionality is actually being used here. Should be
+// obvious which ones can be removed once code gets moved into the above tree.
 
 // Includes
 #include "servo.h"
@@ -39,10 +64,13 @@ static const CANConfig can1Config =
 			CAN_BTR_BRP(2)		// Baudrate divisor of 3 (1 Mbps)
 };
 
+// REVIEW(Barach): Documentation and better naming. What is this the scale factor for?
 #define SCALEFACTOR 0.02442002442002442
 #define SCALEFACTORSW 0.005493247882810711
 
-
+// REVIEW(Barach): Documentation. Also longhand is always preferred unless it is obvious what the shorthand stands for. Ex.
+//   Tx => transmit
+//   Rx => receive
 // DRS Macros
 #define DRS_CAN_TRNS_ID 0x7A4
 #define DRS_CAN_THTA_TRGT_SF (360.0f / 1024.0f)
@@ -93,6 +121,8 @@ void receiveMessage(CANRxFrame* frame)
 }
 
 
+// REVIEW(Barach): Prototype is defined in peripherals.h but implementation is defined in main.c. This should be consistent
+// (only in peripherals.c / peripherals.h)
 
 /**
  * @brief Initializes the mc24lc32 and i2c drivers to prepare for CAN
@@ -115,7 +145,8 @@ void mc24lc32_i2c_init(void)
 	if (!mc24lc32Init (&eeprom_driver, &EEPROM_CONFIG) && eeprom_driver.state == MC24LC32_STATE_FAILED)
 		hardFaultCallback(); 
 
-	
+	// REVEIW(Barach): Misleading documentation. The read operation is done in the mc24lc32Init function, this cast is just
+	// changing how we interpret the data that was read.
 
 	// "Read" the eeprom's data (or in other words): 
 	// Cast then assign the mc24lc32_t object's member variable "cache" to theta_vals
@@ -123,7 +154,7 @@ void mc24lc32_i2c_init(void)
 
 }
 
-
+// REVIEW(Barach): This should be replaced with an instance from the can_thread module in the common library.
 /**
  * @brief Create a thread to read/send CAN Frames
  * 		  This is mainly ChibiOS stuff
@@ -158,6 +189,7 @@ THD_FUNCTION (canthread, arg)
  * @brief Void Function to Handle Incoming Can Frames with both EEPROM and Can Signal 
  * receive (read) / command (write) operations
  * 
+ * // REVEIW(Barach): Misleading documentation. This frame is received not sent.
  * @param obj 	The CANRxFrame that you send from the canthread to then be processed
  */
 void handleCanMessage(CANRxFrame obj) 
@@ -229,6 +261,7 @@ int main (void)
 	palClearLine (LINE_CAN1_STBY);
 	pwmStart (&PWMD3, &pwm3Config);
 
+	// REVIEW(Barach): Should be replaced with the common library can_thread.
 	chThdCreateStatic(&canthreadWa, sizeof(canthreadWa), NORMALPRIO, &canthread, NULL);
 
 	peripheralsInit();
@@ -237,8 +270,11 @@ int main (void)
 	// lastState to a placeholder value
 	// open to 0
 	// stall to 1
+
+	// REVIEW(Barach): Documentation and naming. How is this different to DRS_OPEN_STEADY and DRS_OPEN_TRANSITION?
 	bool open = 0;
 
+	// REVIEW(Barach): Missing documentation on what these states mean.
 	enum State {
 		DRS_OPEN_STEADY 	  = 0,
 		DRS_OPEN_TRANSITION   = 1,
@@ -251,7 +287,8 @@ int main (void)
 
 	bool stall = false;
 
-
+	// REVIEW(Barach): This is using an extended CAN ID (29-bit), but the DBC file has it listed as a standard (11-bit) ID.
+	//   There is no reason for this to be an extended ID.
 	// Initialize con't:
 	// canTransmitFrame 
 	CANTxFrame canTransmitFrame = { 
@@ -280,12 +317,14 @@ int main (void)
 
 		// Sending CAN Signals:
 
+		// REVIEW(Barach): Misleading documentation
 		// convert to 10 bit representation (for angle_target):
 		// from [-20,20] -> [0, 1023]
 		int32_t raw_count = (int32_t) ((theta_vals->angle_target + 180) * (1 / DRS_CAN_THTA_TRGT_SF));
 
 		// pack based on the DBC file with Intel Style (Little-Endian)
 		uint16_t package = 
+			// REVIEW(Barach): Redundant bitmask
 			((uint16_t)(raw_count & 0x3FF) & 0x3FF) |
 			(((uint8_t) lastState & 0x7) << 10) |
 			(((uint8_t) eeprom_driver.state & 0x3) << 13) |
@@ -299,6 +338,7 @@ int main (void)
 
 		if (canTransmitMessage != MSG_OK)
 		{
+			// REVIEW(Barach): CAN Message failures aren't uncommon, the board should be tolerant to this.
 			hardFaultCallback();
 		}
 
@@ -308,11 +348,14 @@ int main (void)
 		// Update lastState as well to reflect changing angular positions
 		if (stall)
 		{
+			// REVIEW(Barach): Shouldn't be modifying the EEPROM memory map unless intending to write to the EEPROM (definitely
+			// not needed here). Should just be a local float.
 			theta_vals->angle_backoff = 
 			(lastState == DRS_OPEN_TRANSITION || lastState == DRS_OPEN_STEADY) 
 				? theta_vals->angle_target - angle_backoff_prime 
 				: theta_vals->angle_target + angle_backoff_prime;
 
+			// REVIEW(Barach): Same as above.
 			theta_vals->angle_backoff = (theta_vals->angle_backoff < theta_vals->angle_closed) 
 				? theta_vals->angle_closed 
 				: theta_vals->angle_backoff;
@@ -326,24 +369,26 @@ int main (void)
 
 			if (open)
 			{
+				// REVIEW(Barach): Same as above.
 				theta_vals->angle_target += theta_vals->angle_step;
 				lastState = DRS_OPEN_TRANSITION;
 
 				if (theta_vals->angle_target > theta_vals->angle_open)
 				{
 
+					// REVIEW(Barach): Same as above.
 					theta_vals->angle_target = theta_vals->angle_open;
 					lastState = DRS_OPEN_STEADY;
 
 				}
 			} else {
-
+				// REVIEW(Barach): Same as above.
 				theta_vals->angle_target -= theta_vals->angle_step;
 				lastState = DRS_CLOSED_TRANSITION;
 
 				if (theta_vals->angle_target < theta_vals->angle_closed)
 				{
-
+					// REVIEW(Barach): Same as above.
 					theta_vals->angle_target = theta_vals->angle_closed;
 					lastState = DRS_CLOSED_STEADY;
 
@@ -364,7 +409,8 @@ int main (void)
 
 void hardFaultCallback (void)
 {
-	// TODO(Barach): Fault behavior
+	// REVIEW(Barach): There shouldn't be a while loop here, the infinite-loop should be implemented after the call to this
+	//   function.
 	while (true)
 	{}
 }

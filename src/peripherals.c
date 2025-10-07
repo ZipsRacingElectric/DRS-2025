@@ -1,14 +1,16 @@
 #include "peripherals.h"
 
-
+// REVEIW(Barach): Documentation. What are these and where do they come from?
 const float R_SHUNT = 0.1;
 const float CURRENT_GAIN = 50;
 
+// REVEIW(Barach): Non-external global variables should always be static to prevent linker collision.
 int stall_cur_count = 0; // current stall counter
 
 mc24lc32_t eeprom_driver;
 linearSensor_t output_current;
 
+// REVEIW(Barach): If these values aren't changing, the struct should be constant.
 // LinearSensor configuration to be used by the adc later in the code, more explained in ADC part
 linearSensorConfig_t output_current_config = {
     .sampleMin = 0,
@@ -18,6 +20,7 @@ linearSensorConfig_t output_current_config = {
     .valueMax = (3.3 / (R_SHUNT * CURRENT_GAIN)) //3.3 is the voltage max
 };
 
+// REVEIW(Barach): If these values aren't changing, the struct should be constant.
 // ADC configuration for the given STM chip, configured to read the output current of the shunt resistor
 // for reading a potential stall condition
 stmAdc_t adc;
@@ -44,11 +47,20 @@ stmAdcConfig_t adc_config = {
  * @return true  -> stall HAS been met
  * @return false -> stall has NOT been met
  */
+
+// REVEIW(Barach): The value of stall isn't used within this function, and the result is already returned, so why are we
+//   passing a pointer in here?
 bool checkStall(bool* stall)
 {
     // Gather a sample of the adc 
     // Reference in stm_adc.h for more information
     stmAdcSample (&adc);
+
+	// REVEIW(Barach): Actual names are always preferred to symbolic representations. Ex:
+	//   v => voltage.
+	//   i => current.
+	// Name should also contain what current it is. Is this for the whole board, the ADC, or just the servo?
+	// Ex. motorCurrent or inverterCurrent.
 
     // i = output_current.value, where "i" is the current leaving the servo or the current consumed by
     // the servo

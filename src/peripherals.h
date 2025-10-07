@@ -22,6 +22,7 @@
 extern mc24lc32_t eeprom_driver;
 extern linearSensor_t output_current;
 
+// REVIEW(Barach): Should almost never have static variables defined in a header. Move into a *.c file.
 
 // Standard I2C config for the board
 static const I2CConfig I2C1_CONFIG = 
@@ -31,6 +32,8 @@ static const I2CConfig I2C1_CONFIG =
 	.duty_cycle = FAST_DUTY_CYCLE_2
 }; 
 
+// REVIEW(Barach): Should almost never have static variables defined in a header. Move into a *.c file.
+
 // Configuration for the EEPROM, uses the normal driver for the STM
 static const mc24lc32Config_t EEPROM_CONFIG = {
 	.addr = MC24LC32_ADDRS, 
@@ -39,6 +42,8 @@ static const mc24lc32Config_t EEPROM_CONFIG = {
 	.magicString = EEPROM_MAGIC_STRING,
 	.dirtyHook = NULL
 }; 
+
+// REVIEW(Barach): This should be called by peripheralsInit so it doesn't need to be defined in a header.
 
 /**
  * @brief Initialize the mc24lc32 with I2C communication
